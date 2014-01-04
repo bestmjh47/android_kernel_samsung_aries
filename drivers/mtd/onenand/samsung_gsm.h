@@ -31,37 +31,37 @@ struct mtd_partition s3c_partition_info[] = {
                                                                    
         {
 		.name		= "boot",
-		.offset		= (72*SZ_256K),
+		.offset	= (72*SZ_256K),
 		.size		= (30*SZ_256K), //101
 	},
 	{
 		.name		= "recovery",
-		.offset		= (102*SZ_256K),
+		.offset	= (102*SZ_256K),
 		.size		= (30*SZ_256K), //131
 	},
 	{	
 		.name		= "datadata",
-		.offset		=  (132*SZ_256K),
-		.size		= (1688*SZ_256K), //1819
+		.offset	= (132*SZ_256K),
+		.size		= (1658*SZ_256K), //1789
 	},
 	{
 		.name		= "cache",
-		.offset		= (1820*SZ_256K),
-		.size		= (70*SZ_256K), //1889
+		.offset	= (1790*SZ_256K),
+		.size		= (70*SZ_256K), //1859
 	},
 	{       /* we should consider moving this before the modem at the end
 	           that would allow us to change the partitions before without
 	           loosing ths sensible data*/
 		.name		= "efs",
-		.offset		= (1890*SZ_256K),
-		.size		= (50*SZ_256K), //1939
+		.offset	= (1948*SZ_256K),
+		.size		= (56*SZ_256K), //2003
 	},
 	{       /* the modem firmware has to be mtd5 as the userspace samsung ril uses
 	           this device hardcoded, but I placed it at the end of the NAND to be
 	           able to change the other partition layout without moving it */
 		.name		= "radio",
-		.offset		= (1940*SZ_256K),
-		.size		= (79*SZ_256K), //2003
+		.offset	= (1860*SZ_256K),
+		.size		= (88*SZ_256K), //1947
 	},
 	{       /* The reservoir area is used by Samsung's Block Management Layer (BML)
 	           to map good blocks from this reservoir to bad blocks in user
