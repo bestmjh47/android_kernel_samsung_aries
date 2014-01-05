@@ -28,47 +28,49 @@ struct mtd_partition s3c_partition_info[] = {
    ###### NEVER TOUCH THE FIRST 2 256k PAGES! THEY CONTAIN THE FIRST STAGE BOOTLOADER ######
    #########################################################################################
    #########################################################################################*/ 
-                                                                   
-        {
+
+	{
 		.name		= "boot",
-		.offset	= (72*SZ_256K),
+		.offset		= (72*SZ_256K),
 		.size		= (30*SZ_256K), //101
 	},
 	{
 		.name		= "recovery",
-		.offset	= (102*SZ_256K),
+		.offset		= (102*SZ_256K),
 		.size		= (30*SZ_256K), //131
 	},
-	{	
+
+	/* SHMOD START */
+
+	{	/* SH MODDED DATADATA SIZE FOR KOR MODEM */
 		.name		= "datadata",
-		.offset	= (132*SZ_256K),
-		.size		= (1658*SZ_256K), //1789
+		.offset		=  (132*SZ_256K),
+		.size		= (1658*SZ_256K), //1789 - SHMOD
 	},
-	{
+	{	/* SH MODDED CACHE OFFSET FOR KOR MODEM */
 		.name		= "cache",
-		.offset	= (1790*SZ_256K),
-		.size		= (70*SZ_256K), //1859
+		.offset		= (1790*SZ_256K),
+		.size		= (70*SZ_256K), //1859 - SHMOD
 	},
-	{       /* we should consider moving this before the modem at the end
-	           that would allow us to change the partitions before without
-	           loosing ths sensible data*/
-		.name		= "efs",
-		.offset	= (1948*SZ_256K),
-		.size		= (56*SZ_256K), //2003
-	},
-	{       /* the modem firmware has to be mtd5 as the userspace samsung ril uses
-	           this device hardcoded, but I placed it at the end of the NAND to be
-	           able to change the other partition layout without moving it */
+	{	/* SH MODDED MODEM SIZE FOR KOR ARIES */
 		.name		= "radio",
-		.offset	= (1860*SZ_256K),
-		.size		= (88*SZ_256K), //1947
+		.offset		= (1860*SZ_256K),
+		.size		= (88*SZ_256K), //1947 - SHMOD
 	},
-	{       /* The reservoir area is used by Samsung's Block Management Layer (BML)
-	           to map good blocks from this reservoir to bad blocks in user
-	           partitions. A special tool (bml_over_mtd) is needed to write
-	           partition images using bad block mapping.
-	           Currently, this is required for flashing the "boot" partition,
-	           as Samsung's stock bootloader expects BML partitions.*/
+	{	/* SH MODDED EFS PART SIZE FOR MODEM */
+		.name		= "efs",
+		.offset		= (1948*SZ_256K),
+		.size		= (56*SZ_256K), //2003 - SHMOD
+	},
+
+	/* SHMOD END */
+
+	{	/* The reservoir area is used by Samsung's Block Management Layer (BML)
+		   to map good blocks from this reservoir to bad blocks in user
+		   partitions. A special tool (bml_over_mtd) is needed to write
+		   partition images using bad block mapping.
+		   Currently, this is required for flashing the "boot" partition,
+		   as Samsung's stock bootloader expects BML partitions.*/
 		.name		= "reservoir",
 		.offset		= (2004*SZ_256K),
 		.size		= (44*SZ_256K), //2047
