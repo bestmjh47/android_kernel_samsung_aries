@@ -107,7 +107,7 @@ static void proc_dump_substream_formats(struct snd_usb_substream *subs, struct s
 			}
 			snd_iprintf(buffer, "\n");
 		}
-		if (subs->speed != USB_SPEED_FULL)
+		if (snd_usb_get_speed(subs->dev) == USB_SPEED_HIGH)
 			snd_iprintf(buffer, "    Data packet interval: %d us\n",
 				    125 * (1 << fp->datainterval));
 		// snd_iprintf(buffer, "    Max Packet Size = %d\n", fp->maxpacksize);
@@ -128,15 +128,10 @@ static void proc_dump_substream_status(struct snd_usb_substream *subs, struct sn
 		snd_iprintf(buffer, "]\n");
 		snd_iprintf(buffer, "    Packet Size = %d\n", subs->curpacksize);
 		snd_iprintf(buffer, "    Momentary freq = %u Hz (%#x.%04x)\n",
-			    subs->speed == USB_SPEED_FULL
+			    snd_usb_get_speed(subs->dev) == USB_SPEED_FULL
 			    ? get_full_speed_hz(subs->freqm)
 			    : get_high_speed_hz(subs->freqm),
 			    subs->freqm >> 16, subs->freqm & 0xffff);
-		if (subs->freqshift != INT_MIN)
-			snd_iprintf(buffer, "    Feedback Format = %d.%d\n",
-				    (subs->syncmaxsize > 3 ? 32 : 24)
-						- (16 - subs->freqshift),
-				    16 - subs->freqshift);
 	} else {
 		snd_iprintf(buffer, "  Status: Stop\n");
 	}

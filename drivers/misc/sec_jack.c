@@ -98,6 +98,33 @@ static struct gpio_event_platform_data sec_jack_input_data = {
 	.info_count = ARRAY_SIZE(sec_jack_input_info),
 };
 
+extern void proximity_jack_control(int on);
+extern int isVoiceCall;
+extern int prox_factorymode;
+
+#if 1 // for S1-KOR mic_bias and ear_mic_bias
+static int recording_status=0;
+static unsigned int g_cur_jack_type;
+
+unsigned int get_headset_status(void)
+{
+	//pr_info("[JACK] %s : cur_jack_type = %#x", __func__, g_cur_jack_type);
+	return g_cur_jack_type;
+}
+EXPORT_SYMBOL(get_headset_status);
+
+void set_recording_status(int value)
+{
+	recording_status = value;
+}
+EXPORT_SYMBOL(set_recording_status);
+
+static int get_recording_status(void)
+{
+	return recording_status;
+}
+#endif // for S1-KOR mic_bias and ear_mic_bias
+
 /* gpio_input driver does not support to read adc value.
  * We use input filter to support 3-buttons of headset
  * without changing gpio_input driver.

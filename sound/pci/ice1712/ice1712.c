@@ -2595,8 +2595,6 @@ static int __devinit snd_ice1712_create(struct snd_card *card,
 	snd_ice1712_proc_init(ice);
 	synchronize_irq(pci->irq);
 
-	card->private_data = ice;
-
 	err = pci_request_regions(pci, "ICE1712");
 	if (err < 0) {
 		kfree(ice);
@@ -2757,7 +2755,7 @@ static int __devinit snd_ice1712_probe(struct pci_dev *pci,
 			return err;
 		}
 		if (c->mpu401_1_name)
-			/*  Preferred name available in card_info */
+			/*  Prefered name available in card_info */
 			snprintf(ice->rmidi[0]->name,
 				 sizeof(ice->rmidi[0]->name),
 				 "%s %d", c->mpu401_1_name, card->number);
@@ -2774,7 +2772,7 @@ static int __devinit snd_ice1712_probe(struct pci_dev *pci,
 				return err;
 			}
 			if (c->mpu401_2_name)
-				/*  Preferred name available in card_info */
+				/*  Prefered name available in card_info */
 				snprintf(ice->rmidi[1]->name,
 					 sizeof(ice->rmidi[1]->name),
 					 "%s %d", c->mpu401_2_name,

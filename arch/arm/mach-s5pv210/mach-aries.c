@@ -1361,8 +1361,7 @@ static void sec_jack_set_ldo4_constraints(int disabled) {
 
 static struct wm8994_platform_data wm8994_pdata = {
 	.ldo = GPIO_CODEC_LDO_EN,
-	.ear_sel = -1,
-	.set_mic_bias = wm8994_set_mic_bias,
+	.set_mic_bias = NULL,
 };
 
 /*
@@ -2257,7 +2256,7 @@ static struct i2c_board_info i2c_devs0[] __initdata = {
 
 static struct i2c_board_info i2c_devs4[] __initdata = {
 	{
-		I2C_BOARD_INFO("wm8994-samsung", (0x34>>1)),
+		I2C_BOARD_INFO("wm8994", (0x34>>1)),
 		.platform_data = &wm8994_pdata,
 	},
 };

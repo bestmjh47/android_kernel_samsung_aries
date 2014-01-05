@@ -54,7 +54,6 @@
 #include <sound/asequencer.h>
 #include "usbaudio.h"
 #include "midi.h"
-#include "power.h"
 #include "helper.h"
 
 /*
@@ -115,7 +114,6 @@ struct snd_usb_midi {
 	struct list_head list;
 	struct timer_list error_timer;
 	spinlock_t disc_lock;
-	struct rw_semaphore disc_rwsem;
 	struct mutex mutex;
 	u32 usb_id;
 	int next_midi_device;
@@ -125,9 +123,8 @@ struct snd_usb_midi {
 		struct snd_usb_midi_in_endpoint *in;
 	} endpoints[MIDI_MAX_ENDPOINTS];
 	unsigned long input_triggered;
-	unsigned int opened[2];
+	unsigned int opened;
 	unsigned char disconnected;
-	unsigned char input_running;
 
 	struct snd_kcontrol *roland_load_ctl;
 };
@@ -437,7 +434,7 @@ static void snd_usbmidi_maudio_broken_running_status_input(
 			u8 cin = buffer[i] & 0x0f;
 			struct usbmidi_in_port *port = &ep->ports[cable];
 			int length;
-
+			
 			length = snd_usbmidi_cin_length[cin];
 			if (cin == 0xf && buffer[i + 1] >= 0xf8)
 				; /* realtime msg: no running status change */
@@ -631,13 +628,13 @@ static struct usb_protocol_ops snd_usbmidi_standard_ops = {
 
 static struct usb_protocol_ops snd_usbmidi_midiman_ops = {
 	.input = snd_usbmidi_midiman_input,
-	.output = snd_usbmidi_standard_output,
+	.output = snd_usbmidi_standard_output, 
 	.output_packet = snd_usbmidi_output_midiman_packet,
 };
 
 static struct usb_protocol_ops snd_usbmidi_maudio_broken_running_status_ops = {
 	.input = snd_usbmidi_maudio_broken_running_status_input,
-	.output = snd_usbmidi_standard_output,
+	.output = snd_usbmidi_standard_output, 
 	.output_packet = snd_usbmidi_output_standard_packet,
 };
 
@@ -787,7 +784,7 @@ static struct usb_protocol_ops snd_usbmidi_novation_ops = {
 };
 
 /*
- * "raw" protocol: just move raw MIDI bytes from/to the endpoint
+ * "raw" protocol: used by the MOTU FastLane.
  */
 
 static void snd_usbmidi_raw_input(struct snd_usb_midi_in_endpoint* ep,
@@ -837,14 +834,7 @@ static void snd_usbmidi_us122l_output(struct snd_usb_midi_out_endpoint *ep,
 
 	if (!ep->ports[0].active)
 		return;
-	switch (snd_usb_get_speed(ep->umidi->dev)) {
-	case USB_SPEED_HIGH:
-	case USB_SPEED_SUPER:
-		count = 1;
-		break;
-	default:
-		count = 2;
-	}
+	count = snd_usb_get_speed(ep->umidi->dev) == USB_SPEED_HIGH ? 1 : 2;
 	count = snd_rawmidi_transmit(ep->ports[0].substream,
 				     urb->transfer_buffer,
 				     count);
@@ -853,8 +843,8 @@ static void snd_usbmidi_us122l_output(struct snd_usb_midi_out_endpoint *ep,
 		return;
 	}
 
-	memset(urb->transfer_buffer + count, 0xFD, ep->max_transfer - count);
-	urb->transfer_buffer_length = ep->max_transfer;
+	memset(urb->transfer_buffer + count, 0xFD, 9 - count);
+	urb->transfer_buffer_length = count;
 }
 
 static struct usb_protocol_ops snd_usbmidi_122l_ops = {
@@ -1017,48 +1007,29 @@ static void update_roland_altsetting(struct snd_usb_midi* umidi)
 	snd_usbmidi_input_start(&umidi->list);
 }
 
-static int substream_open(struct snd_rawmidi_substream *substream, int dir,
-			  int open)
+static void substream_open(struct snd_rawmidi_substream *substream, int open)
 {
 	struct snd_usb_midi* umidi = substream->rmidi->private_data;
 	struct snd_kcontrol *ctl;
 
-	down_read(&umidi->disc_rwsem);
-	if (umidi->disconnected) {
-		up_read(&umidi->disc_rwsem);
-		return open ? -ENODEV : 0;
-	}
-
 	mutex_lock(&umidi->mutex);
 	if (open) {
-		if (!umidi->opened[0] && !umidi->opened[1]) {
-			if (umidi->roland_load_ctl) {
-				ctl = umidi->roland_load_ctl;
-				ctl->vd[0].access |= SNDRV_CTL_ELEM_ACCESS_INACTIVE;
-				snd_ctl_notify(umidi->card,
+		if (umidi->opened++ == 0 && umidi->roland_load_ctl) {
+			ctl = umidi->roland_load_ctl;
+			ctl->vd[0].access |= SNDRV_CTL_ELEM_ACCESS_INACTIVE;
+			snd_ctl_notify(umidi->card,
 				       SNDRV_CTL_EVENT_MASK_INFO, &ctl->id);
-				update_roland_altsetting(umidi);
-			}
+			update_roland_altsetting(umidi);
 		}
-		umidi->opened[dir]++;
-		if (umidi->opened[1])
-			snd_usbmidi_input_start(&umidi->list);
 	} else {
-		umidi->opened[dir]--;
-		if (!umidi->opened[1])
-			snd_usbmidi_input_stop(&umidi->list);
-		if (!umidi->opened[0] && !umidi->opened[1]) {
-			if (umidi->roland_load_ctl) {
-				ctl = umidi->roland_load_ctl;
-				ctl->vd[0].access &= ~SNDRV_CTL_ELEM_ACCESS_INACTIVE;
-				snd_ctl_notify(umidi->card,
+		if (--umidi->opened == 0 && umidi->roland_load_ctl) {
+			ctl = umidi->roland_load_ctl;
+			ctl->vd[0].access &= ~SNDRV_CTL_ELEM_ACCESS_INACTIVE;
+			snd_ctl_notify(umidi->card,
 				       SNDRV_CTL_EVENT_MASK_INFO, &ctl->id);
-			}
 		}
 	}
 	mutex_unlock(&umidi->mutex);
-	up_read(&umidi->disc_rwsem);
-	return 0;
 }
 
 static int snd_usbmidi_output_open(struct snd_rawmidi_substream *substream)
@@ -1078,15 +1049,16 @@ static int snd_usbmidi_output_open(struct snd_rawmidi_substream *substream)
 		snd_BUG();
 		return -ENXIO;
 	}
-
 	substream->runtime->private_data = port;
 	port->state = STATE_UNKNOWN;
-	return substream_open(substream, 0, 1);
+	substream_open(substream, 1);
+	return 0;
 }
 
 static int snd_usbmidi_output_close(struct snd_rawmidi_substream *substream)
 {
-	return substream_open(substream, 0, 0);
+	substream_open(substream, 0);
+	return 0;
 }
 
 static void snd_usbmidi_output_trigger(struct snd_rawmidi_substream *substream, int up)
@@ -1139,12 +1111,14 @@ static void snd_usbmidi_output_drain(struct snd_rawmidi_substream *substream)
 
 static int snd_usbmidi_input_open(struct snd_rawmidi_substream *substream)
 {
-	return substream_open(substream, 1, 1);
+	substream_open(substream, 1);
+	return 0;
 }
 
 static int snd_usbmidi_input_close(struct snd_rawmidi_substream *substream)
 {
-	return substream_open(substream, 1, 0);
+	substream_open(substream, 0);
+	return 0;
 }
 
 static void snd_usbmidi_input_trigger(struct snd_rawmidi_substream *substream, int up)
@@ -1274,7 +1248,7 @@ static void snd_usbmidi_out_endpoint_delete(struct snd_usb_midi_out_endpoint *ep
  */
 static int snd_usbmidi_out_endpoint_create(struct snd_usb_midi* umidi,
 					   struct snd_usb_midi_endpoint_info* ep_info,
-					   struct snd_usb_midi_endpoint* rep)
+			 		   struct snd_usb_midi_endpoint* rep)
 {
 	struct snd_usb_midi_out_endpoint* ep;
 	unsigned int i;
@@ -1312,15 +1286,7 @@ static int snd_usbmidi_out_endpoint_create(struct snd_usb_midi* umidi,
 	case USB_ID(0x15ca, 0x0101): /* Textech USB Midi Cable */
 	case USB_ID(0x15ca, 0x1806): /* Textech USB Midi Cable */
 	case USB_ID(0x1a86, 0x752d): /* QinHeng CH345 "USB2.0-MIDI" */
-	case USB_ID(0xfc08, 0x0101): /* Unknown vendor Cable */
 		ep->max_transfer = 4;
-		break;
-		/*
-		 * Some devices only work with 9 bytes packet size:
-		 */
-	case USB_ID(0x0644, 0x800E): /* Tascam US-122L */
-	case USB_ID(0x0644, 0x800F): /* Tascam US-144 */
-		ep->max_transfer = 9;
 		break;
 	}
 	for (i = 0; i < OUTPUT_URBS; ++i) {
@@ -1393,12 +1359,9 @@ void snd_usbmidi_disconnect(struct list_head* p)
 	 * a timer may submit an URB. To reliably break the cycle
 	 * a flag under lock must be used
 	 */
-	down_write(&umidi->disc_rwsem);
 	spin_lock_irq(&umidi->disc_lock);
 	umidi->disconnected = 1;
 	spin_unlock_irq(&umidi->disc_lock);
-	up_write(&umidi->disc_rwsem);
-
 	for (i = 0; i < MIDI_MAX_ENDPOINTS; ++i) {
 		struct snd_usb_midi_endpoint* ep = &umidi->endpoints[i];
 		if (ep->out)
@@ -1435,7 +1398,7 @@ static void snd_usbmidi_rawmidi_free(struct snd_rawmidi *rmidi)
 }
 
 static struct snd_rawmidi_substream *snd_usbmidi_find_substream(struct snd_usb_midi* umidi,
-								int stream, int number)
+							   int stream, int number)
 {
 	struct list_head* list;
 
@@ -1759,7 +1722,13 @@ static int roland_load_info(struct snd_kcontrol *kcontrol,
 {
 	static const char *const names[] = { "High Load", "Light Load" };
 
-	return snd_ctl_enum_info(info, 1, 2, names);
+	info->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
+	info->count = 1;
+	info->value.enumerated.items = 2;
+	if (info->value.enumerated.item > 1)
+		info->value.enumerated.item = 1;
+	strcpy(info->value.enumerated.name, names[info->value.enumerated.item]);
+	return 0;
 }
 
 static int roland_load_get(struct snd_kcontrol *kcontrol,
@@ -1842,7 +1811,7 @@ static int snd_usbmidi_detect_endpoints(struct snd_usb_midi* umidi,
 		snd_usbmidi_switch_roland_altsetting(umidi);
 
 	if (endpoint[0].out_ep || endpoint[0].in_ep)
-		return 0;
+		return 0;	
 
 	intf = umidi->iface;
 	if (!intf || intf->num_altsetting < 1)
@@ -1880,7 +1849,7 @@ static int snd_usbmidi_detect_per_port_endpoints(struct snd_usb_midi* umidi,
 						 struct snd_usb_midi_endpoint_info* endpoints)
 {
 	int err, i;
-
+	
 	err = snd_usbmidi_detect_endpoints(umidi, endpoints, MIDI_MAX_ENDPOINTS);
 	for (i = 0; i < MIDI_MAX_ENDPOINTS; ++i) {
 		if (endpoints[i].out_ep)
@@ -2053,15 +2022,12 @@ void snd_usbmidi_input_stop(struct list_head* p)
 	unsigned int i, j;
 
 	umidi = list_entry(p, struct snd_usb_midi, list);
-	if (!umidi->input_running)
-		return;
 	for (i = 0; i < MIDI_MAX_ENDPOINTS; ++i) {
 		struct snd_usb_midi_endpoint* ep = &umidi->endpoints[i];
 		if (ep->in)
 			for (j = 0; j < INPUT_URBS; ++j)
 				usb_kill_urb(ep->in->urbs[j]);
 	}
-	umidi->input_running = 0;
 }
 
 static void snd_usbmidi_input_start_ep(struct snd_usb_midi_in_endpoint* ep)
@@ -2086,11 +2052,8 @@ void snd_usbmidi_input_start(struct list_head* p)
 	int i;
 
 	umidi = list_entry(p, struct snd_usb_midi, list);
-	if (umidi->input_running || !umidi->opened[1])
-		return;
 	for (i = 0; i < MIDI_MAX_ENDPOINTS; ++i)
 		snd_usbmidi_input_start_ep(umidi->endpoints[i].in);
-	umidi->input_running = 1;
 }
 
 /*
@@ -2116,7 +2079,6 @@ int snd_usbmidi_create(struct snd_card *card,
 	umidi->usb_protocol_ops = &snd_usbmidi_standard_ops;
 	init_timer(&umidi->error_timer);
 	spin_lock_init(&umidi->disc_lock);
-	init_rwsem(&umidi->disc_rwsem);
 	mutex_init(&umidi->mutex);
 	umidi->usb_id = USB_ID(le16_to_cpu(umidi->dev->descriptor.idVendor),
 			       le16_to_cpu(umidi->dev->descriptor.idProduct));
@@ -2153,7 +2115,7 @@ int snd_usbmidi_create(struct snd_card *card,
 		umidi->usb_protocol_ops = &snd_usbmidi_novation_ops;
 		err = snd_usbmidi_detect_per_port_endpoints(umidi, endpoints);
 		break;
-	case QUIRK_MIDI_RAW_BYTES:
+	case QUIRK_MIDI_FASTLANE:
 		umidi->usb_protocol_ops = &snd_usbmidi_raw_ops;
 		/*
 		 * Interface 1 contains isochronous endpoints, but with the same
@@ -2164,8 +2126,7 @@ int snd_usbmidi_create(struct snd_card *card,
 		 * interface 0, so we have to make sure that the USB core looks
 		 * again at interface 0 by calling usb_set_interface() on it.
 		 */
-		if (umidi->usb_id == USB_ID(0x07fd, 0x0001)) /* MOTU Fastlane */
-			usb_set_interface(umidi->dev, 0, 0);
+		usb_set_interface(umidi->dev, 0, 0);
 		err = snd_usbmidi_detect_per_port_endpoints(umidi, endpoints);
 		break;
 	case QUIRK_MIDI_EMAGIC:
@@ -2217,9 +2178,10 @@ int snd_usbmidi_create(struct snd_card *card,
 		return err;
 	}
 
-	usb_autopm_get_interface_no_resume(umidi->iface);
-
 	list_add_tail(&umidi->list, midi_list);
+
+	for (i = 0; i < MIDI_MAX_ENDPOINTS; ++i)
+		snd_usbmidi_input_start_ep(umidi->endpoints[i].in);
 	return 0;
 }
 
